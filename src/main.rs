@@ -1,59 +1,120 @@
-use std::fs;
+use std::time::Duration;
 
-use crate::gif::{ImageDescriptorPackedField, LogicalScreenDescriptorPackedField};
+use http_body_util::StreamBody;
+use hyper::body::{Bytes, Frame, Incoming};
+use hyper::{Request, Response, service};
+use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper_util::server::conn::auto::Builder;
+use tokio::net::TcpListener;
+use tokio::signal;
+use tokio::sync::watch::Receiver;
+use tokio::sync::{mpsc, watch};
+use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::{Stream, StreamExt};
 
+use crate::frame::ToBytes;
+use crate::generators::Generator;
+use crate::generators::test_square::TestSquare;
+use crate::gif::LogicalScreenDescriptorPackedField;
+
+mod frame;
+mod generators;
 mod gif;
 mod lzw;
 
-fn main() {
-    let data = [
-        gif::header().as_ref(),
-        gif::logical_screen_descriptor(
-            10,
-            10,
-            LogicalScreenDescriptorPackedField {
-                global_color_table_flag: true,
-                color_resolution: 0,
-                sort_flag: false,
-                size_of_global_color_table: 1,
-            },
-            0,
-            0,
-        )
-        .as_ref(),
-        &gif::color_table(&[[255, 255, 255], [255, 0, 0], [0, 0, 255], [0, 0, 0]]),
-        gif::image_descriptor(
-            0,
-            0,
-            10,
-            10,
-            ImageDescriptorPackedField {
-                local_color_table_flag: false,
-                interlace_flag: false,
-                sort_flag: false,
-                size_of_local_color_table: 0,
-            },
-        )
-        .as_ref(),
-        gif::image_data(
-            &gif::codestream_to_bytes(
-                &lzw::colorstream_to_codestream(
-                    &[
-                        1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1,
-                        2, 2, 2, 2, 2, 1, 1, 1, 0, 0, 0, 0, 2, 2, 2, 1, 1, 1, 0, 0, 0, 0, 2, 2, 2,
-                        2, 2, 2, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2,
-                        1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1,
-                    ],
-                    2,
-                ),
-                2,
-            ),
-            2,
-        )
-        .as_ref(),
-        &[gif::trailer()],
-    ]
-    .concat();
+fn generate_gif(mut running_rx: Receiver<bool>) -> mpsc::UnboundedReceiver<Vec<u8>> {
+    let (tx, rx) = mpsc::unbounded_channel();
 
-    fs::write("test.gif", data).unwrap();
+    tx.send(
+        [
+            gif::header().as_ref(),
+            gif::logical_screen_descriptor(
+                88,
+                31,
+                LogicalScreenDescriptorPackedField {
+                    global_color_table_flag: false,
+                    color_resolution: 7,
+                    sort_flag: false,
+                    size_of_global_color_table: 0,
+                },
+                0,
+                0,
+            )
+            .as_ref(),
+        ]
+        .concat(),
+    )
+    .unwrap();
+
+    tokio::spawn(async move {
+        let mut generator = TestSquare;
+
+        while *running_rx.borrow() {
+            let frame = generator.next_frame();
+
+            let Ok(()) = tx.send(frame.to_bytes()) else {
+                return;
+            };
+
+            tokio::select! {
+                biased;
+                () = tokio::time::sleep(Duration::from_secs(1)) => (),
+                _ = running_rx.changed() => break,
+            };
+        }
+
+        tx.send([gif::trailer()].into()).ok();
+    });
+
+    rx
+}
+
+fn stream_gif(
+    _: Request<Incoming>,
+    running_rx: Receiver<bool>,
+) -> Response<StreamBody<impl Stream<Item = Result<Frame<Bytes>, !>>>> {
+    let stream = UnboundedReceiverStream::new(generate_gif(running_rx))
+        .map(|bytes| Ok(Frame::data(bytes.into())));
+
+    Response::builder()
+        .header("Content-Type", "image/gif")
+        .header("Cache-Control", "no-store")
+        .body(StreamBody::new(stream))
+        .unwrap()
+}
+
+#[tokio::main]
+async fn main() {
+    let (running_tx, mut running_rx) = watch::channel(true);
+
+    tokio::spawn(async move {
+        signal::ctrl_c().await.unwrap();
+        running_tx.send(false).unwrap();
+        eprintln!("stop!!!");
+    });
+
+    let listener = TcpListener::bind(("localhost", 8080)).await.unwrap();
+
+    while *running_rx.borrow() {
+        let (stream, _) = tokio::select! {
+            biased;
+            result = listener.accept() => result.unwrap(),
+            _ = running_rx.changed() => break,
+        };
+
+        let running_rx = running_rx.clone();
+
+        tokio::task::spawn(async move {
+            Builder::new(TokioExecutor::new())
+                .serve_connection(
+                    TokioIo::new(stream),
+                    service::service_fn(|request| {
+                        let running_rx = running_rx.clone();
+                        async move { Ok::<_, !>(stream_gif(request, running_rx)) }
+                    }),
+                )
+                .await
+                .ok()
+        });
+    }
 }

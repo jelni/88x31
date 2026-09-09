@@ -14,6 +14,7 @@ impl LogicalScreenDescriptorPackedField {
             self.color_resolution < (1 << 3),
             "color_resolution has only 3 bits"
         );
+
         assert!(
             self.size_of_global_color_table < (1 << 3),
             "color_resolution has only 3 bits"
@@ -32,6 +33,36 @@ impl LogicalScreenDescriptorPackedField {
         }
 
         value | self.size_of_global_color_table
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct GraphicControlExtensionPackedField {
+    pub disposal_method: u8,
+    pub user_input_flag: bool,
+    pub transparent_color_flag: bool,
+}
+
+impl GraphicControlExtensionPackedField {
+    pub fn as_byte(self) -> u8 {
+        assert!(
+            self.disposal_method < (1 << 3),
+            "disposal_method has only 3 bits"
+        );
+
+        let mut value = 0;
+
+        value |= self.disposal_method << 5;
+
+        if self.user_input_flag {
+            value |= 1 << 1;
+        }
+
+        if self.transparent_color_flag {
+            value |= 1;
+        }
+
+        value
     }
 }
 
@@ -93,6 +124,23 @@ pub fn logical_screen_descriptor(
 
 pub fn color_table(colors: &[[u8; 3]]) -> Vec<u8> {
     colors.concat()
+}
+
+pub fn graphic_control_extension(
+    packed_field: GraphicControlExtensionPackedField,
+    delay_time: u16,
+    transparent_color_index: u8,
+) -> [u8; 8] {
+    [
+        [0x21, 0xf9, 0x04].as_ref(),
+        &[packed_field.as_byte()],
+        delay_time.to_le_bytes().as_ref(),
+        transparent_color_index.to_le_bytes().as_ref(),
+        &[0x00],
+    ]
+    .concat()
+    .try_into()
+    .unwrap()
 }
 
 pub fn image_descriptor(
