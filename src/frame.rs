@@ -36,7 +36,7 @@ impl GifFrame {
                     user_input_flag: false,
                     transparent_color_flag: self.transparent_color_index.is_some(),
                 },
-                0,
+                2,
                 self.transparent_color_index.unwrap_or_default(),
             )
             .as_ref(),

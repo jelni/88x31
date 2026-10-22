@@ -75,14 +75,16 @@ impl Character {
 
 pub struct TextGenerator<'a> {
     position: (u16, u16),
+    color: Color,
     characters: Cow<'a, [Character]>,
     iteration: usize,
 }
 
 impl<'a> TextGenerator<'a> {
-    pub const fn new(position: (u16, u16), characters: Cow<'a, [Character]>) -> Self {
+    pub const fn new(position: (u16, u16), color: Color, characters: Cow<'a, [Character]>) -> Self {
         Self {
             position,
+            color,
             characters,
             iteration: 0,
         }
@@ -112,12 +114,12 @@ impl Generator for TextGenerator<'_> {
         Some(GifFrame {
             position,
             size: character.size(),
-            transparent_color_index: Some(0),
-            color_table: vec![Color { r: 0, g: 0, b: 0 }],
+            transparent_color_index: Some(1),
+            color_table: vec![self.color, Color { r: 0, g: 0, b: 0 }],
             colorstream: character
                 .pixels()
                 .iter()
-                .map(|line| line.iter().map(|&character| character.into()).collect())
+                .map(|line| line.iter().map(|&character| (!character).into()).collect())
                 .collect(),
         })
     }

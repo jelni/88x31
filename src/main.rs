@@ -47,9 +47,9 @@ fn generate_gif(mut running_rx: Receiver<bool>) -> mpsc::UnboundedReceiver<Vec<u
     .unwrap();
 
     tokio::spawn(async move {
-        'outer: loop {
+        'outer: for invert in [false, true].into_iter().cycle() {
             for mut generator in [
-                Box::new(JelGenerator::new()) as Box<dyn Generator>,
+                Box::new(JelGenerator::new(invert)) as Box<dyn Generator>,
                 Box::new(TestSquare::new(50)),
             ] {
                 while *running_rx.borrow() {
@@ -63,7 +63,7 @@ fn generate_gif(mut running_rx: Receiver<bool>) -> mpsc::UnboundedReceiver<Vec<u
 
                     tokio::select! {
                         biased;
-                        () = tokio::time::sleep(Duration::from_millis(20)) => (),
+                        () = tokio::time::sleep(Duration::from_millis(50)) => (),
                         _ = running_rx.changed() => break 'outer,
                     };
                 }

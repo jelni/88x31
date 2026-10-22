@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::frame::GifFrame;
+use crate::frame::{Color, GifFrame};
 use crate::generators::Generator;
 use crate::generators::text::Character;
 use crate::generators::text_lines::TextLinesGenerator;
@@ -10,7 +10,7 @@ pub struct JelGenerator {
 }
 
 impl JelGenerator {
-    pub fn new() -> Self {
+    pub fn new(invert: bool) -> Self {
         let lines = {
             let mut jel = [Character::J, Character::E, Character::L]
                 .iter()
@@ -30,7 +30,18 @@ impl JelGenerator {
                         );
                     }
 
-                    Cow::Owned(characters.collect())
+                    (
+                        if invert {
+                            Color {
+                                r: 255,
+                                g: 255,
+                                b: 255,
+                            }
+                        } else {
+                            Color { r: 0, g: 0, b: 0 }
+                        },
+                        Cow::Owned(characters.collect()),
+                    )
                 })
                 .collect()
         };

@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
 
-use crate::frame::GifFrame;
+use crate::frame::{Color, GifFrame};
 use crate::generators::Generator;
 use crate::generators::text::{Character, TextGenerator};
 
@@ -10,12 +10,14 @@ pub struct TextLinesGenerator<'a> {
 }
 
 impl<'a> TextLinesGenerator<'a> {
-    pub fn new(position: (u16, u16), lines: Vec<Cow<'a, [Character]>>) -> Self {
+    pub fn new(position: (u16, u16), lines: Vec<(Color, Cow<'a, [Character]>)>) -> Self {
         Self {
             lines: lines
                 .into_iter()
                 .zip(0..)
-                .map(|(line, index)| TextGenerator::new((position.0, position.1 + 8 * index), line))
+                .map(|((color, line), index)| {
+                    TextGenerator::new((position.0, position.1 + 8 * index), color, line)
+                })
                 .collect(),
         }
     }
