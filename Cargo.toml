@@ -8,6 +8,7 @@ pedantic = "warn"
 nursery = "warn"
 
 [dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
 http-body-util = "0.1"
 hyper = { version = "1.11", features = ["server"] }
 hyper-util = { version = "0.1", features = ["server-auto", "tokio"] }

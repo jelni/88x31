@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use clap::Parser;
 use http_body_util::StreamBody;
 use hyper::body::{Bytes, Frame, Incoming};
 use hyper::{Request, Response, service};
@@ -12,11 +13,13 @@ use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::{Stream, StreamExt};
 
+use crate::cli::Cli;
 use crate::generators::Generator;
 use crate::generators::jel::JelGenerator;
 use crate::generators::test_square::TestSquare;
 use crate::gif::LogicalScreenDescriptorPackedField;
 
+mod cli;
 mod frame;
 mod generators;
 mod gif;
@@ -92,6 +95,7 @@ fn stream_gif(
 
 #[tokio::main]
 async fn main() {
+    let args = Cli::parse();
     let (running_tx, mut running_rx) = watch::channel(true);
 
     tokio::spawn(async move {
@@ -100,7 +104,7 @@ async fn main() {
         eprintln!("stop!!!");
     });
 
-    let listener = TcpListener::bind(("localhost", 8080)).await.unwrap();
+    let listener = TcpListener::bind((args.host, args.port)).await.unwrap();
 
     while *running_rx.borrow() {
         let (stream, _) = tokio::select! {
