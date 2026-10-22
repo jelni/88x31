@@ -1,7 +1,10 @@
+use crate::frame::GifFrame;
+
+pub mod jel;
 pub mod test_square;
+pub mod text;
+pub mod text_lines;
 
-use crate::frame::ToBytes;
-
-pub trait Generator {
-    fn next_frame(&mut self) -> impl ToBytes;
+pub trait Generator: Send + Sync {
+    fn next_frame(&mut self) -> Option<GifFrame>;
 }

@@ -16,43 +16,42 @@ impl Color {
     }
 }
 
-pub struct GifFrame<const WIDTH: usize, const HEIGHT: usize> {
+pub struct GifFrame {
     pub position: (u16, u16),
+    pub size: (u16, u16),
+    pub transparent_color_index: Option<u8>,
     pub color_table: Vec<Color>,
-    pub colorstream: [[u8; WIDTH]; HEIGHT],
+    pub colorstream: Vec<Vec<u8>>,
 }
 
-pub trait ToBytes {
-    fn to_bytes(&self) -> Vec<u8>;
-}
-
-impl<const WIDTH: usize, const HEIGHT: usize> ToBytes for GifFrame<WIDTH, HEIGHT> {
-    fn to_bytes(&self) -> Vec<u8> {
-        let color_table_size = self.color_table.len().next_power_of_two();
-
-        let min_code_size = u8::try_from(color_table_size.bit_width()).unwrap() - 1;
+impl GifFrame {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let color_table_size = self.color_table.len().next_power_of_two().max(2);
+        let min_code_size = (u8::try_from(color_table_size.bit_width()).unwrap() - 1).max(2);
 
         [
             gif::graphic_control_extension(
                 GraphicControlExtensionPackedField {
                     disposal_method: 0,
                     user_input_flag: false,
-                    transparent_color_flag: false,
+                    transparent_color_flag: self.transparent_color_index.is_some(),
                 },
                 0,
-                0,
+                self.transparent_color_index.unwrap_or_default(),
             )
             .as_ref(),
             gif::image_descriptor(
                 self.position.0,
                 self.position.1,
-                WIDTH.try_into().unwrap(),
-                HEIGHT.try_into().unwrap(),
+                self.size.0,
+                self.size.1,
                 ImageDescriptorPackedField {
                     local_color_table_flag: true,
                     interlace_flag: false,
                     sort_flag: false,
-                    size_of_local_color_table: min_code_size >> 1,
+                    size_of_local_color_table: (color_table_size.trailing_zeros() - 1)
+                        .try_into()
+                        .unwrap(),
                 },
             )
             .as_ref(),

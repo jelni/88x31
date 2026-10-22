@@ -12,8 +12,8 @@ use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::{Stream, StreamExt};
 
-use crate::frame::ToBytes;
 use crate::generators::Generator;
+use crate::generators::jel::JelGenerator;
 use crate::generators::test_square::TestSquare;
 use crate::gif::LogicalScreenDescriptorPackedField;
 
@@ -47,20 +47,27 @@ fn generate_gif(mut running_rx: Receiver<bool>) -> mpsc::UnboundedReceiver<Vec<u
     .unwrap();
 
     tokio::spawn(async move {
-        let mut generator = TestSquare;
+        'outer: loop {
+            for mut generator in [
+                Box::new(JelGenerator::new()) as Box<dyn Generator>,
+                Box::new(TestSquare::new(50)),
+            ] {
+                while *running_rx.borrow() {
+                    let Some(frame) = generator.next_frame() else {
+                        break;
+                    };
 
-        while *running_rx.borrow() {
-            let frame = generator.next_frame();
+                    let Ok(()) = tx.send(frame.to_bytes()) else {
+                        return;
+                    };
 
-            let Ok(()) = tx.send(frame.to_bytes()) else {
-                return;
-            };
-
-            tokio::select! {
-                biased;
-                () = tokio::time::sleep(Duration::from_secs(1)) => (),
-                _ = running_rx.changed() => break,
-            };
+                    tokio::select! {
+                        biased;
+                        () = tokio::time::sleep(Duration::from_millis(20)) => (),
+                        _ = running_rx.changed() => break 'outer,
+                    };
+                }
+            }
         }
 
         tx.send([gif::trailer()].into()).ok();
